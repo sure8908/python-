@@ -1,0 +1,260 @@
+PIVOT and UNPIVOT
+
+The function PIVOT transposes rows in columns and the function UNPIVOT transposes columns in rows. They have been added in 11g. 
+
+WITH
+   T
+AS
+(
+   SELECT
+      DEPTNO
+   FROM
+      EMP
+)
+SELECT
+   *
+FROM
+   T
+PIVOT
+(
+   COUNT(*)
+   FOR
+      (DEPTNO)
+   IN
+      (10,20,30,40)
+);
+
+        10         20         30         40
+---------- ---------- ---------- ----------
+         3          5          6          0
+
+----------------------------------------------------------------------------
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+----------------------------------------------------------------------------
+|   0 | SELECT STATEMENT    |      |     1 |    52 |     3   (0)| 00:00:01 |
+|   1 |  VIEW               |      |     1 |    52 |     3   (0)| 00:00:01 |
+|   2 |   SORT AGGREGATE    |      |     1 |     3 |            |          |
+|   3 |    TABLE ACCESS FULL| EMP  |    14 |    42 |     3   (0)| 00:00:01 |
+----------------------------------------------------------------------------
+
+Four columns are created for the departments 10, 20, 30 and 40. For each column, the number of corresponding rows is counted.
+
+Compare with:
+
+SELECT
+   DEPTNO,
+   COUNT(*)
+FROM
+   EMP
+GROUP BY
+   DEPTNO; 
+
+    DEPTNO   COUNT(*)
+---------- ----------
+        30          6
+        20          5
+        10          3
+
+In the first statement, one row is returned with all departments. In the second statement each department is on a different row. The columns that are not aggregated and not pivoted will return multiple rows:
+
+WITH
+   T
+AS
+(
+   SELECT
+      DEPTNO,
+      JOB,
+      SAL
+   FROM
+      EMP
+)
+SELECT
+   *
+FROM
+   T
+PIVOT
+(
+   MIN(SAL) AS MINSAL,
+   MAX(SAL) AS MAXSAL
+FOR
+   (JOB)
+IN
+   (
+      'CLERK' AS CLERK,
+      'SALESMAN' AS SALES
+   )
+)
+ORDER BY
+   DEPTNO;
+
+    DEPTNO CLERK_MINSAL CLERK_MAXSAL SALES_MINSAL SALES_MAXSAL
+---------- ------------ ------------ ------------ ------------
+        10         1300         1300
+        20          800         1100
+        30          950          950         1250         1600
+
+Three rows are selected. The job is the pivot, the salaries are aggregated and the departments are returned as distinct rows. Note the different values for the pivot are explicitly listed.
+
+The inline view T contains three columns, the salary is aggregated, the job is transposed into multiple columns, and the remaining column is used as a group for the aggregation. The remaining column is the department, which contains three distinct values; each value returns exactly one row. To specify the group by the department, it is therefore necessary to select only the department in addition to the aggregated values and to the transposed column.
+
+UNPIVOT does the opposite operation. The columns are converted into rows:
+
+SELECT
+   EMPNO,
+   ENAME,
+   PROPERTY,
+   VALUE
+FROM
+   EMP
+UNPIVOT
+EXCLUDE NULLS
+(
+   VALUE
+   FOR
+      PROPERTY
+   IN
+   (
+      SAL,
+      COMM
+   )
+)
+WHERE
+   DEPTNO=30;
+
+     EMPNO ENAME      PROP      VALUE
+---------- ---------- ---- ----------
+      7499 ALLEN      SAL        1600
+      7499 ALLEN      COMM        300
+      7521 WARD       SAL        1250
+      7521 WARD       COMM        500
+      7654 MARTIN     SAL        1250
+      7654 MARTIN     COMM       1400
+      7698 BLAKE      SAL        2850
+      7844 TURNER     SAL        1500
+      7844 TURNER     COMM          0
+      7900 JAMES      SAL         950
+
+----------------------------------------------------------------------------
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+----------------------------------------------------------------------------
+|   0 | SELECT STATEMENT    |      |    10 |   500 |     6   (0)| 00:00:01 |
+|*  1 |  VIEW               |      |    10 |   500 |     6   (0)| 00:00:01 |
+|   2 |   UNPIVOT           |      |       |       |            |          |
+|*  3 |    TABLE ACCESS FULL| EMP  |     5 |    95 |     3   (0)| 00:00:01 |
+----------------------------------------------------------------------------
+
+Predicate Information (identified by operation id):
+--------------------------------------------------- 
+   1 - filter("unpivot_view"."VALUE" IS NOT NULL)
+    3 - filter("EMP"."DEPTNO"=30)
+
+For each employee in department 30, two rows are returned - one for the salary and one for the commission. The EXCLUDE NULLS clause (default) does not return rows with a salary or a commission that is null. INCLUDE NULLS includes null values.
+
+A possible usage of UNPIVOT is to display one row in a vertical format:
+
+WITH
+      T
+AS
+(
+   SELECT
+      TO_CHAR(EMPNO) EMPNO,
+      ENAME,
+      JOB,
+      TO_CHAR(MGR) MGR,
+      TO_CHAR(HIREDATE) HIREDATE,
+      TO_CHAR(SAL) SAL,
+      TO_CHAR(COMM) COMM,
+      TO_CHAR(DEPTNO) DEPTNO
+   FROM
+      EMP
+   WHERE
+      EMPNO=7788
+)
+SELECT
+   *
+FROM
+   T
+UNPIVOT
+INCLUDE NULLS
+(
+   VALUE
+   FOR
+      COL
+   IN
+   (
+      EMPNO,
+      ENAME,
+      JOB,
+      MGR,
+      HIREDATE,
+      SAL,
+      COMM,
+      DEPTNO
+   )
+);
+
+COL      VALUE
+-------- ---------
+EMPNO    7788
+ENAME    SCOTT
+JOB      ANALYST
+MGR      7566
+HIREDATE 19-APR-87
+SAL      3000
+COMM
+DEPTNO   20
+
+Each column is converted to characters and transposed as a row. 
+
+Conclusion
+
+This chapter covered aggregate functions, which are functions that return a single value from multiple rows.  Various keywords such as DISTINCT, COUNT DISTINCT and KEEP can be used to count rows in different ways.  There are also other aggregate functions like CUBE, ROLLUP, and GROUPING SETS that generate subtotals and totals.  PIVOT and UNPIVOT are aggregate functions that deal with the transposing of rows and columns and have been added in 11g.
+
+
+
+
+
+SELECT * FROM
+(
+  SELECT column1, column2
+  FROM tables
+  WHERE conditions
+)
+PIVOT 
+(
+  aggregate_function(column2)
+  FOR column2
+  IN ( expr1, expr2, ... expr_n) | subquery
+)
+ORDER BY expression [ ASC | DESC ];
+
+
+Parameters or Arguments
+
+aggregate_function
+    It can be a function such as SUM, COUNT, MIN, MAX, or AVG functions.
+IN ( expr1, expr2, ... expr_n )
+    A list of values for column2 to pivot into headings in the cross-tabulation query results.
+subquery
+    It can be used instead of a list of values. In this case, the results of the subquery would be used to determine the values for column2 to pivot into headings in the cross-tabulation query results.
+
+Applies To
+
+The PIVOT clause can be used in the following versions of Oracle/PLSQL:
+
+    Oracle 12c, Oracle 11g
+
+
+
+
+SELECT * FROM
+(
+  SELECT customer_ref, product_id
+  FROM orders
+)
+PIVOT
+(
+  COUNT(product_id)
+  FOR product_id IN (10, 20, 30)
+)
+ORDER BY customer_ref;
